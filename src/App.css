@@ -36,3 +36,24 @@
     transform: rotate(360deg);
   }
 }
+
+.App {
+  font-family: Arial, sans-serif;
+  padding: 2rem;
+}
+
+.upload-section label {
+  display: block;
+  margin: 1rem 0;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  padding: .5rem;
+}
