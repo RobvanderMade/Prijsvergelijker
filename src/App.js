@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { saveAs } from "file-saver";
@@ -8,21 +8,15 @@ import "./App.css";
    PRIJS FUNCTIES
 ========================= */
 
-// 21% BTW toevoegen
 function addBTW(price) {
   return price * 1.21;
 }
 
-// Afronden naar boven op ,95
 function roundUpTo95(price) {
   const floor = Math.floor(price);
   const target = floor + 0.95;
-
-  if (price <= target) {
-    return parseFloat(target.toFixed(2));
-  } else {
-    return parseFloat((floor + 1 + 0.95).toFixed(2));
-  }
+  if (price <= target) return parseFloat(target.toFixed(2));
+  return parseFloat((floor + 1 + 0.95).toFixed(2));
 }
 
 function App() {
@@ -41,9 +35,12 @@ function App() {
   });
 
   const [results, setResults] = useState([]);
+  const [search, setSearch] = useState("");
+  const [sortConfig, setSortConfig] = useState({ key: "", direction: "asc" });
+  const [statusFilter, setStatusFilter] = useState("all");
 
   /* =========================
-     BESTAND INLEZEN
+     BESTANDEN INLEZEN
   ========================= */
 
   const handleWebshopFile = (file) => {
@@ -80,7 +77,6 @@ function App() {
     }
 
     const leverancierMap = new Map();
-
     leverancierData.forEach((item) => {
       leverancierMap.set(
         String(item[mapping.levArtikel]),
@@ -94,31 +90,15 @@ function App() {
       const oudePrijs = parseFloat(item[mapping.wsPrijs]);
 
       if (!leverancierMap.has(artikelnummer)) {
-        return {
-          artikelnummer,
-          naam,
-          oudePrijs,
-          nieuwePrijs: "",
-          status: "notfound",
-        };
+        return { artikelnummer, naam, oudePrijs, nieuwePrijs: "", status: "notfound" };
       }
 
       const leverancierExcl = leverancierMap.get(artikelnummer);
-
       if (!leverancierExcl || isNaN(leverancierExcl)) {
-        return {
-          artikelnummer,
-          naam,
-          oudePrijs,
-          nieuwePrijs: "",
-          status: "notfound",
-        };
+        return { artikelnummer, naam, oudePrijs, nieuwePrijs: "", status: "notfound" };
       }
 
-      // 1️⃣ BTW toevoegen (21%)
       const leverancierIncl = addBTW(leverancierExcl);
-
-      // 2️⃣ Afronden naar boven op ,95
       const nieuwePrijs = roundUpTo95(leverancierIncl);
 
       let status = "lower";
@@ -134,31 +114,71 @@ function App() {
     });
 
     setResults(output);
+    setStatusFilter("all");
   };
 
   /* =========================
-     EXPORT EXCEL
+     FILTER + SORTERING
+  ========================= */
+
+  const filteredResults = useMemo(() => {
+    let filtered = results;
+
+    if (statusFilter !== "all") {
+      filtered = filtered.filter(r => r.status === statusFilter);
+    }
+
+    if (search) {
+      filtered = filtered.filter(r =>
+        r.artikelnummer.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+
+    if (sortConfig.key) {
+      filtered = [...filtered].sort((a, b) => {
+        const aVal = a[sortConfig.key];
+        const bVal = b[sortConfig.key];
+
+        if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [results, search, sortConfig, statusFilter]);
+
+  const requestSort = (key) => {
+    let direction = "asc";
+    if (sortConfig.key === key && sortConfig.direction === "asc") {
+      direction = "desc";
+    }
+    setSortConfig({ key, direction });
+  };
+
+  /* =========================
+     STATISTIEKEN
+  ========================= */
+
+  const stats = {
+    total: results.length,
+    notfound: results.filter(r => r.status === "notfound").length,
+    higher: results.filter(r => r.status === "higher").length,
+    lower: results.filter(r => r.status === "lower").length
+  };
+
+  /* =========================
+     EXPORT
   ========================= */
 
   const exportExcel = () => {
-    const exportData = results.map(r => ({
-      Artikelnummer: r.artikelnummer,
-      Naam: r.naam,
-      Oude_prijs: r.oudePrijs,
-      Nieuwe_prijs: r.nieuwePrijs
-    }));
-
-    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const worksheet = XLSX.utils.json_to_sheet(filteredResults);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Prijsupdate");
 
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-    });
-
-    const blob = new Blob([excelBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     });
 
     saveAs(blob, "prijs_update.xlsx");
@@ -172,80 +192,100 @@ function App() {
     <div className="App">
       <h1>Prijs Vergelijker</h1>
 
-      <div>
-        <label>
-          Webshop Excel:
+      {/* Upload */}
+      <div className="card upload-grid">
+        <div>
+          <label>Webshop Excel</label>
           <input type="file" accept=".xlsx" onChange={(e) => handleWebshopFile(e.target.files[0])} />
-        </label>
+        </div>
 
-        <label>
-          Leverancier CSV (excl. BTW):
+        <div>
+          <label>Leverancier CSV (excl. BTW)</label>
           <input type="file" accept=".csv" onChange={(e) => handleLeverancierFile(e.target.files[0])} />
-        </label>
+        </div>
       </div>
 
-      {webshopColumns.length > 0 && (
-        <div>
-          <h3>Webshop kolommen koppelen</h3>
+      {/* Mapping */}
+      {(webshopColumns.length > 0 || leverancierColumns.length > 0) && (
+        <div className="card mapping-grid">
           <select onChange={e => setMapping({...mapping, wsArtikel: e.target.value})}>
-            <option value="">Artikelnummer</option>
+            <option value="">Webshop Artikelnummer</option>
             {webshopColumns.map(col => <option key={col}>{col}</option>)}
           </select>
 
           <select onChange={e => setMapping({...mapping, wsNaam: e.target.value})}>
-            <option value="">Naam</option>
+            <option value="">Webshop Naam</option>
             {webshopColumns.map(col => <option key={col}>{col}</option>)}
           </select>
 
           <select onChange={e => setMapping({...mapping, wsPrijs: e.target.value})}>
-            <option value="">Prijs</option>
+            <option value="">Webshop Prijs</option>
             {webshopColumns.map(col => <option key={col}>{col}</option>)}
           </select>
-        </div>
-      )}
 
-      {leverancierColumns.length > 0 && (
-        <div>
-          <h3>Leverancier kolommen koppelen</h3>
           <select onChange={e => setMapping({...mapping, levArtikel: e.target.value})}>
-            <option value="">Artikelnummer</option>
+            <option value="">Leverancier Artikelnummer</option>
             {leverancierColumns.map(col => <option key={col}>{col}</option>)}
           </select>
 
           <select onChange={e => setMapping({...mapping, levPrijs: e.target.value})}>
-            <option value="">Prijs (excl BTW)</option>
+            <option value="">Leverancier Prijs (excl)</option>
             {leverancierColumns.map(col => <option key={col}>{col}</option>)}
           </select>
+
+          <button className="primary" onClick={comparePrices}>Vergelijken</button>
         </div>
       )}
 
-      <button onClick={comparePrices}>Vergelijken</button>
-
+      {/* Dashboard Filters */}
       {results.length > 0 && (
-        <>
-          <button onClick={exportExcel}>Export Excel</button>
+        <div className="card stats">
+          <div className={`stat-box ${statusFilter === "all" ? "active" : ""}`} onClick={() => setStatusFilter("all")}>
+            Totaal: {stats.total}
+          </div>
 
+          <div className={`stat-box red-box ${statusFilter === "notfound" ? "active" : ""}`} onClick={() => setStatusFilter("notfound")}>
+            Niet gevonden: {stats.notfound}
+          </div>
+
+          <div className={`stat-box green-box ${statusFilter === "higher" ? "active" : ""}`} onClick={() => setStatusFilter("higher")}>
+            Prijs hoger: {stats.higher}
+          </div>
+
+          <div className={`stat-box orange-box ${statusFilter === "lower" ? "active" : ""}`} onClick={() => setStatusFilter("lower")}>
+            Prijs lager/gelijk: {stats.lower}
+          </div>
+        </div>
+      )}
+
+      {/* Zoek + Export */}
+      {results.length > 0 && (
+        <div className="card">
+          <input
+            type="text"
+            placeholder="Zoek artikelnummer..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+          <button className="secondary" onClick={exportExcel}>Export Excel</button>
+        </div>
+      )}
+
+      {/* Tabel */}
+      {results.length > 0 && (
+        <div className="card table-container">
           <table>
             <thead>
               <tr>
-                <th>Artikelnummer</th>
-                <th>Naam</th>
-                <th>Oude prijs</th>
-                <th>Nieuwe prijs</th>
+                <th onClick={() => requestSort("artikelnummer")}>Artikelnummer</th>
+                <th onClick={() => requestSort("naam")}>Naam</th>
+                <th onClick={() => requestSort("oudePrijs")}>Oude prijs</th>
+                <th onClick={() => requestSort("nieuwePrijs")}>Nieuwe prijs</th>
               </tr>
             </thead>
             <tbody>
-              {results.map((r, i) => (
-                <tr
-                  key={i}
-                  className={
-                    r.status === "notfound"
-                      ? "red"
-                      : r.status === "higher"
-                      ? "green"
-                      : "orange"
-                  }
-                >
+              {filteredResults.map((r, i) => (
+                <tr key={i} className={r.status}>
                   <td>{r.artikelnummer}</td>
                   <td>{r.naam}</td>
                   <td>{r.oudePrijs}</td>
@@ -254,7 +294,7 @@ function App() {
               ))}
             </tbody>
           </table>
-        </>
+        </div>
       )}
     </div>
   );
