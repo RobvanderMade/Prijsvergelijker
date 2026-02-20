@@ -85,7 +85,7 @@ function App() {
                 <th>Naam</th>
                 <th>Webshop Prijs</th>
                 <th>Leverancier Prijs</th>
-                <th>Nieuwe Prijs</th>
+                <th>Update Prijs</th>
               </tr>
             </thead>
             <tbody>
