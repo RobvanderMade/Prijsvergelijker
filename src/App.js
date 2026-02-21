@@ -190,7 +190,7 @@ function App() {
 
   return (
     <div className="App">
-      <h1>Prijs Vergelijker</h1>
+      <h1>Webshop Prijs Vergelijker</h1>
 
       {/* Upload */}
       <div className="card upload-grid">
