@@ -209,27 +209,27 @@ function App() {
       {(webshopColumns.length > 0 || leverancierColumns.length > 0) && (
         <div className="card mapping-grid">
           <select onChange={e => setMapping({...mapping, wsArtikel: e.target.value})}>
-            <option value="">Webshop Artikelnummer</option>
+            <option value="">Webshop Nummer</option>
             {webshopColumns.map(col => <option key={col}>{col}</option>)}
           </select>
 
           <select onChange={e => setMapping({...mapping, wsNaam: e.target.value})}>
-            <option value="">Webshop Naam</option>
+            <option value="">Webshop Productnaam</option>
             {webshopColumns.map(col => <option key={col}>{col}</option>)}
           </select>
 
           <select onChange={e => setMapping({...mapping, wsPrijs: e.target.value})}>
-            <option value="">Webshop Prijs</option>
+            <option value="">Webshop Prijs incl. BTW</option>
             {webshopColumns.map(col => <option key={col}>{col}</option>)}
           </select>
 
           <select onChange={e => setMapping({...mapping, levArtikel: e.target.value})}>
-            <option value="">Leverancier Artikelnummer</option>
+            <option value="">Leverancier Nummer</option>
             {leverancierColumns.map(col => <option key={col}>{col}</option>)}
           </select>
 
           <select onChange={e => setMapping({...mapping, levPrijs: e.target.value})}>
-            <option value="">Leverancier Prijs (excl)</option>
+            <option value="">Leverancier Prijs excl. BTW(excl)</option>
             {leverancierColumns.map(col => <option key={col}>{col}</option>)}
           </select>
 
