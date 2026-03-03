@@ -85,6 +85,8 @@ function App() {
       Papa.parse(file, {
         header: true,
         skipEmptyLines: true,
+        delimiter: "", // auto-detect
+        delimitersToGuess: [",", ";", "\t", "|", ":"],
         complete: (res) => {
           setLeverancierData(res.data);
           setLeverancierColumns(Object.keys(res.data[0] || {}));
@@ -335,6 +337,7 @@ function App() {
                 onClick={()=>setStatusFilter("lower")}>
               Lager: {results.filter(r=>r.status==="lower").length}
             </div>
+
             <div className={`stat-box red-box ${statusFilter==="notfound"?"active":""}`} onClick={()=>setStatusFilter("notfound")}>
               Niet gevonden: {results.filter(r=>r.status==="notfound").length}
             </div>
