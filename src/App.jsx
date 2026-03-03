@@ -5,18 +5,38 @@ import { saveAs } from "file-saver";
 import "./App.css";
 
 /* =========================
-   PRIJS FUNCTIES
+   HULPFUNCTIES
 ========================= */
 
-function addBTW(price) {
-  return price * 1.21;
+function parsePrice(value) {
+  if (value === undefined || value === null) return 0;
+
+  // Als het al een number is
+  if (typeof value === "number") return value;
+
+  const str = String(value).trim();
+
+  // Als komma aanwezig → Europese notatie
+  if (str.includes(",")) {
+    return Number(
+      str
+        .replace(/\s/g, "")
+        .replace("€", "")
+        .replace(/\./g, "")
+        .replace(",", ".")
+    );
+  }
+
+  // Anders normale notatie
+  return Number(str.replace("€", ""));
 }
 
 function roundUpTo95(price) {
   const floor = Math.floor(price);
   const target = floor + 0.95;
-  if (price <= target) return parseFloat(target.toFixed(2));
-  return parseFloat((floor + 1 + 0.95).toFixed(2));
+  return price <= target
+    ? Number(target.toFixed(2))
+    : Number((floor + 1 + 0.95).toFixed(2));
 }
 
 function App() {
@@ -34,62 +54,52 @@ function App() {
     levPrijs: ""
   });
 
+  const [levBTWMode, setLevBTWMode] = useState("excl");
   const [results, setResults] = useState([]);
   const [search, setSearch] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "", direction: "asc" });
   const [statusFilter, setStatusFilter] = useState("all");
-  const [dragActive, setDragActive] = useState(null);
+
+  const BTW_PERCENTAGE = 21;
 
   /* =========================
-     FILE HANDLING
+     BESTANDEN INLEZEN
   ========================= */
 
-  const parseExcel = (file, setterData, setterColumns) => {
+  const handleWebshopFile = (file) => {
     const reader = new FileReader();
     reader.onload = (e) => {
-      const workbook = XLSX.read(e.target.result, { type: "binary" });
+      const workbook = XLSX.read(e.target.result, { type: "array" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(sheet);
-      setterData(data);
-      setterColumns(Object.keys(data[0] || {}));
+      setWebshopData(data);
+      setWebshopColumns(Object.keys(data[0] || {}));
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
-  const parseCSV = (file, setterData, setterColumns) => {
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (res) => {
-        setterData(res.data);
-        setterColumns(Object.keys(res.data[0] || {}));
-      }
-    });
-  };
-
-  const handleFile = (file, type) => {
-    if (!file) return;
+  const handleLeverancierFile = (file) => {
     const isCSV = file.name.toLowerCase().endsWith(".csv");
 
-    if (type === "webshop") {
-      isCSV
-        ? parseCSV(file, setWebshopData, setWebshopColumns)
-        : parseExcel(file, setWebshopData, setWebshopColumns);
+    if (isCSV) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (res) => {
+          setLeverancierData(res.data);
+          setLeverancierColumns(Object.keys(res.data[0] || {}));
+        }
+      });
     } else {
-      isCSV
-        ? parseCSV(file, setLeverancierData, setLeverancierColumns)
-        : parseExcel(file, setLeverancierData, setLeverancierColumns);
-    }
-  };
-
-  const handleDrop = (e, type) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(null);
-
-    if (e.dataTransfer.files?.length) {
-      handleFile(e.dataTransfer.files[0], type);
-      e.dataTransfer.clearData();
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const workbook = XLSX.read(e.target.result, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(sheet);
+        setLeverancierData(data);
+        setLeverancierColumns(Object.keys(data[0] || {}));
+      };
+      reader.readAsArrayBuffer(file);
     }
   };
 
@@ -104,39 +114,68 @@ function App() {
     }
 
     const leverancierMap = new Map();
+
     leverancierData.forEach((item) => {
       leverancierMap.set(
         String(item[mapping.levArtikel]),
-        parseFloat(item[mapping.levPrijs])
+        parsePrice(item[mapping.levPrijs])
       );
     });
 
     const output = webshopData.map((item) => {
       const artikelnummer = String(item[mapping.wsArtikel]);
       const naam = item[mapping.wsNaam] || "";
-      const oudePrijs = parseFloat(item[mapping.wsPrijs]);
+
+      const oudePrijsRaw = item[mapping.wsPrijs];
+      const oudePrijs = parsePrice(oudePrijsRaw);
 
       if (!leverancierMap.has(artikelnummer)) {
-        return { artikelnummer, naam, oudePrijs, nieuwePrijs: "", status: "notfound" };
+        return {
+          artikelnummer,
+          naam,
+          oudePrijs: oudePrijsRaw,
+          nieuwePrijs: "",
+          status: "notfound"
+        };
       }
 
-      const leverancierExcl = leverancierMap.get(artikelnummer);
-      if (!leverancierExcl || isNaN(leverancierExcl)) {
-        return { artikelnummer, naam, oudePrijs, nieuwePrijs: "", status: "notfound" };
+      const leverancierPrijs = leverancierMap.get(artikelnummer);
+      if (isNaN(leverancierPrijs)) {
+        return {
+          artikelnummer,
+          naam,
+          oudePrijs: oudePrijsRaw,
+          nieuwePrijs: "",
+          status: "notfound"
+        };
       }
 
-      const leverancierIncl = addBTW(leverancierExcl);
+      const leverancierIncl =
+        levBTWMode === "excl"
+          ? leverancierPrijs * (1 + BTW_PERCENTAGE / 100)
+          : leverancierPrijs;
+
       const nieuwePrijs = roundUpTo95(leverancierIncl);
 
-      let status = "lower";
-      if (nieuwePrijs > oudePrijs) status = "higher";
+      let status;
+
+        if (nieuwePrijs > oudePrijs) {
+          status = "higher";
+        } else if (nieuwePrijs < oudePrijs) {
+          status = "lower";
+        } else {
+          status = "equal";
+        }
 
       return {
         artikelnummer,
         naam,
-        oudePrijs: oudePrijs.toFixed(2),
-        nieuwePrijs: nieuwePrijs.toFixed(2),
-        status,
+        oudePrijs: oudePrijsRaw,
+        nieuwePrijs: nieuwePrijs.toLocaleString("nl-NL", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }),
+        status
       };
     });
 
@@ -149,7 +188,7 @@ function App() {
   ========================= */
 
   const filteredResults = useMemo(() => {
-    let filtered = results;
+    let filtered = [...results];
 
     if (statusFilter !== "all") {
       filtered = filtered.filter(r => r.status === statusFilter);
@@ -162,9 +201,10 @@ function App() {
     }
 
     if (sortConfig.key) {
-      filtered = [...filtered].sort((a, b) => {
+      filtered.sort((a, b) => {
         const aVal = a[sortConfig.key];
         const bVal = b[sortConfig.key];
+
         if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
         if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
         return 0;
@@ -182,25 +222,10 @@ function App() {
     setSortConfig({ key, direction });
   };
 
-  /* =========================
-     EXPORT CSV
-  ========================= */
-
   const exportCSV = () => {
     const csv = Papa.unparse(filteredResults, { delimiter: ";" });
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     saveAs(blob, "prijs_update.csv");
-  };
-
-  /* =========================
-     STATS
-  ========================= */
-
-  const stats = {
-    total: results.length,
-    notfound: results.filter(r => r.status === "notfound").length,
-    higher: results.filter(r => r.status === "higher").length,
-    lower: results.filter(r => r.status === "lower").length
   };
 
   /* =========================
@@ -211,52 +236,54 @@ function App() {
     <div className="App">
       <h1>Webshop Prijs Vergelijker</h1>
 
-      {/* Upload */}
       <div className="card upload-grid">
+        <div>
+          <label>Webshop Excel</label>
+          <input
+            type="file"
+            accept=".xlsx"
+            onChange={(e) => e.target.files && handleWebshopFile(e.target.files[0])}
+          />
+        </div>
 
-        <div
-          className={`dropzone ${dragActive === "webshop" ? "active" : ""}`}
-          onDragEnter={() => setDragActive("webshop")}
-          onDragLeave={() => setDragActive(null)}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => handleDrop(e, "webshop")}
-        >
-          <label>Webshop bestand</label>
+        <div>
+          <label>Leverancier (Excel of CSV)</label>
           <input
             type="file"
             accept=".xlsx,.csv"
-            onChange={(e) => {
-              if (e.target.files?.length) {
-                handleFile(e.target.files[0], "webshop");
-              }
-            }}
+            onChange={(e) => e.target.files && handleLeverancierFile(e.target.files[0])}
           />
-          <p>Sleep bestand hierheen of klik</p>
-        </div>
 
-        <div
-          className={`dropzone ${dragActive === "leverancier" ? "active" : ""}`}
-          onDragEnter={() => setDragActive("leverancier")}
-          onDragLeave={() => setDragActive(null)}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => handleDrop(e, "leverancier")}
-        >
-          <label>Leverancier bestand (excl. BTW)</label>
-          <input
-            type="file"
-            accept=".xlsx,.csv"
-            onChange={(e) => {
-              if (e.target.files?.length) {
-                handleFile(e.target.files[0], "leverancier");
-              }
-            }}
-          />
-          <p>Sleep bestand hierheen of klik</p>
+          <div style={{ marginTop: 15 }}>
+            <strong>Leverancier prijzen zijn:</strong>
+            <div>
+              <label>
+                <input
+                  type="radio"
+                  name="btwMode"
+                  value="excl"
+                  checked={levBTWMode === "excl"}
+                  onChange={(e) => setLevBTWMode(e.target.value)}
+                />
+                {" "}Excl. BTW
+              </label>
+            </div>
+            <div>
+              <label>
+                <input
+                  type="radio"
+                  name="btwMode"
+                  value="incl"
+                  checked={levBTWMode === "incl"}
+                  onChange={(e) => setLevBTWMode(e.target.value)}
+                />
+                {" "}Incl. BTW
+              </label>
+            </div>
+          </div>
         </div>
-
       </div>
 
-      {/* Mapping */}
       {webshopColumns.length > 0 && leverancierColumns.length > 0 && (
         <div className="card mapping-grid">
           <select onChange={e => setMapping({...mapping, wsArtikel: e.target.value})}>
@@ -288,14 +315,29 @@ function App() {
         </div>
       )}
 
-      {/* Stats */}
       {results.length > 0 && (
         <>
           <div className="card stats">
-            <div onClick={() => setStatusFilter("all")}>Totaal: {stats.total}</div>
-            <div onClick={() => setStatusFilter("notfound")}>Niet gevonden: {stats.notfound}</div>
-            <div onClick={() => setStatusFilter("higher")}>Hoger: {stats.higher}</div>
-            <div onClick={() => setStatusFilter("lower")}>Lager/gelijk: {stats.lower}</div>
+            <div className={`stat-box ${statusFilter==="all"?"active":""}`} onClick={()=>setStatusFilter("all")}>
+              Totaal: {results.length}
+            </div>
+            <div className={`stat-box green-box ${statusFilter==="higher"?"active":""}`}
+                onClick={()=>setStatusFilter("higher")}>
+              Hoger: {results.filter(r=>r.status==="higher").length}
+            </div>
+
+            <div className={`stat-box blue-box ${statusFilter==="equal"?"active":""}`}
+                onClick={()=>setStatusFilter("equal")}>
+              Gelijk: {results.filter(r=>r.status==="equal").length}
+            </div>
+
+            <div className={`stat-box orange-box ${statusFilter==="lower"?"active":""}`}
+                onClick={()=>setStatusFilter("lower")}>
+              Lager: {results.filter(r=>r.status==="lower").length}
+            </div>
+            <div className={`stat-box red-box ${statusFilter==="notfound"?"active":""}`} onClick={()=>setStatusFilter("notfound")}>
+              Niet gevonden: {results.filter(r=>r.status==="notfound").length}
+            </div>
           </div>
 
           <div className="card">
@@ -303,7 +345,7 @@ function App() {
               type="text"
               placeholder="Zoek artikelnummer..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e)=>setSearch(e.target.value)}
             />
             <button onClick={exportCSV}>Export CSV</button>
           </div>
@@ -312,14 +354,14 @@ function App() {
             <table>
               <thead>
                 <tr>
-                  <th onClick={() => requestSort("artikelnummer")}>Artikelnummer</th>
-                  <th onClick={() => requestSort("naam")}>Naam</th>
-                  <th onClick={() => requestSort("oudePrijs")}>Oude prijs</th>
-                  <th onClick={() => requestSort("nieuwePrijs")}>Nieuwe prijs</th>
+                  <th onClick={()=>requestSort("artikelnummer")}>Artikelnummer</th>
+                  <th>Naam</th>
+                  <th>Oude prijs</th>
+                  <th>Nieuwe prijs</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredResults.map((r, i) => (
+                {filteredResults.map((r,i)=>(
                   <tr key={i} className={r.status}>
                     <td>{r.artikelnummer}</td>
                     <td>{r.naam}</td>
