@@ -41,7 +41,7 @@ function App() {
   const [dragActive, setDragActive] = useState(null);
 
   /* =========================
-     BESTAND INLEZEN
+     FILE HANDLING
   ========================= */
 
   const parseExcel = (file, setterData, setterColumns) => {
@@ -69,7 +69,6 @@ function App() {
 
   const handleFile = (file, type) => {
     if (!file) return;
-
     const isCSV = file.name.toLowerCase().endsWith(".csv");
 
     if (type === "webshop") {
@@ -146,7 +145,7 @@ function App() {
   };
 
   /* =========================
-     FILTER + SORTERING
+     FILTER + SORT
   ========================= */
 
   const filteredResults = useMemo(() => {
@@ -166,7 +165,6 @@ function App() {
       filtered = [...filtered].sort((a, b) => {
         const aVal = a[sortConfig.key];
         const bVal = b[sortConfig.key];
-
         if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
         if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
         return 0;
@@ -213,6 +211,7 @@ function App() {
     <div className="App">
       <h1>Webshop Prijs Vergelijker</h1>
 
+      {/* Upload */}
       <div className="card upload-grid">
 
         <div
@@ -222,13 +221,17 @@ function App() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => handleDrop(e, "webshop")}
         >
-          <label>Webshop bestand (CSV of Excel)</label>
+          <label>Webshop bestand</label>
           <input
             type="file"
             accept=".xlsx,.csv"
-            onChange={(e) => handleFile(e.target.files[0], "webshop")}
+            onChange={(e) => {
+              if (e.target.files?.length) {
+                handleFile(e.target.files[0], "webshop");
+              }
+            }}
           />
-          <p>Sleep bestand hierheen of klik om te kiezen</p>
+          <p>Sleep bestand hierheen of klik</p>
         </div>
 
         <div
@@ -238,24 +241,61 @@ function App() {
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => handleDrop(e, "leverancier")}
         >
-          <label>Leverancier bestand (CSV of Excel, excl. BTW)</label>
+          <label>Leverancier bestand (excl. BTW)</label>
           <input
             type="file"
             accept=".xlsx,.csv"
-            onChange={(e) => handleFile(e.target.files[0], "leverancier")}
+            onChange={(e) => {
+              if (e.target.files?.length) {
+                handleFile(e.target.files[0], "leverancier");
+              }
+            }}
           />
-          <p>Sleep bestand hierheen of klik om te kiezen</p>
+          <p>Sleep bestand hierheen of klik</p>
         </div>
 
       </div>
 
+      {/* Mapping */}
+      {webshopColumns.length > 0 && leverancierColumns.length > 0 && (
+        <div className="card mapping-grid">
+          <select onChange={e => setMapping({...mapping, wsArtikel: e.target.value})}>
+            <option value="">Webshop Nummer</option>
+            {webshopColumns.map(col => <option key={col}>{col}</option>)}
+          </select>
+
+          <select onChange={e => setMapping({...mapping, wsNaam: e.target.value})}>
+            <option value="">Webshop Naam</option>
+            {webshopColumns.map(col => <option key={col}>{col}</option>)}
+          </select>
+
+          <select onChange={e => setMapping({...mapping, wsPrijs: e.target.value})}>
+            <option value="">Webshop Prijs</option>
+            {webshopColumns.map(col => <option key={col}>{col}</option>)}
+          </select>
+
+          <select onChange={e => setMapping({...mapping, levArtikel: e.target.value})}>
+            <option value="">Leverancier Nummer</option>
+            {leverancierColumns.map(col => <option key={col}>{col}</option>)}
+          </select>
+
+          <select onChange={e => setMapping({...mapping, levPrijs: e.target.value})}>
+            <option value="">Leverancier Prijs</option>
+            {leverancierColumns.map(col => <option key={col}>{col}</option>)}
+          </select>
+
+          <button onClick={comparePrices}>Vergelijken</button>
+        </div>
+      )}
+
+      {/* Stats */}
       {results.length > 0 && (
         <>
           <div className="card stats">
             <div onClick={() => setStatusFilter("all")}>Totaal: {stats.total}</div>
             <div onClick={() => setStatusFilter("notfound")}>Niet gevonden: {stats.notfound}</div>
-            <div onClick={() => setStatusFilter("higher")}>Prijs hoger: {stats.higher}</div>
-            <div onClick={() => setStatusFilter("lower")}>Prijs lager/gelijk: {stats.lower}</div>
+            <div onClick={() => setStatusFilter("higher")}>Hoger: {stats.higher}</div>
+            <div onClick={() => setStatusFilter("lower")}>Lager/gelijk: {stats.lower}</div>
           </div>
 
           <div className="card">
@@ -266,6 +306,29 @@ function App() {
               onChange={(e) => setSearch(e.target.value)}
             />
             <button onClick={exportCSV}>Export CSV</button>
+          </div>
+
+          <div className="card table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th onClick={() => requestSort("artikelnummer")}>Artikelnummer</th>
+                  <th onClick={() => requestSort("naam")}>Naam</th>
+                  <th onClick={() => requestSort("oudePrijs")}>Oude prijs</th>
+                  <th onClick={() => requestSort("nieuwePrijs")}>Nieuwe prijs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredResults.map((r, i) => (
+                  <tr key={i} className={r.status}>
+                    <td>{r.artikelnummer}</td>
+                    <td>{r.naam}</td>
+                    <td>{r.oudePrijs}</td>
+                    <td>{r.nieuwePrijs}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}
