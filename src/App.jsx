@@ -110,81 +110,65 @@ function App() {
   ========================= */
 
   const comparePrices = () => {
-    if (!mapping.wsArtikel || !mapping.wsPrijs || !mapping.levArtikel || !mapping.levPrijs) {
-      alert("Selecteer eerst alle kolommen.");
-      return;
-    }
+  if (!mapping.levArtikel || !mapping.levPrijs) {
+    alert("Selecteer leverancier kolommen.");
+    return;
+  }
 
-    const leverancierMap = new Map();
+  const leverancierMap = new Map();
 
-    leverancierData.forEach((item) => {
-      leverancierMap.set(
-        String(item[mapping.levArtikel]),
-        parsePrice(item[mapping.levPrijs])
-      );
-    });
+  leverancierData.forEach((item) => {
+    leverancierMap.set(
+      String(item[mapping.levArtikel]),
+      parsePrice(item[mapping.levPrijs])
+    );
+  });
 
-    const output = webshopData.map((item) => {
-      const artikelnummer = String(item[mapping.wsArtikel]);
-      const naam = item[mapping.wsNaam] || "";
+  const output = webshopData.map((item) => {
+    const artikelnummer = String(item["Artikelnummer"]);
+    const naam = item["Naam"] || "";
+    const oudePrijsRaw = item["Prijs"];
+    const oudePrijs = parsePrice(oudePrijsRaw);
 
-      const oudePrijsRaw = item[mapping.wsPrijs];
-      const oudePrijs = parsePrice(oudePrijsRaw);
-
-      if (!leverancierMap.has(artikelnummer)) {
-        return {
-          artikelnummer,
-          naam,
-          oudePrijs: oudePrijsRaw,
-          nieuwePrijs: "",
-          status: "notfound"
-        };
-      }
-
-      const leverancierPrijs = leverancierMap.get(artikelnummer);
-      if (isNaN(leverancierPrijs)) {
-        return {
-          artikelnummer,
-          naam,
-          oudePrijs: oudePrijsRaw,
-          nieuwePrijs: "",
-          status: "notfound"
-        };
-      }
-
-      const leverancierIncl =
-        levBTWMode === "excl"
-          ? leverancierPrijs * (1 + BTW_PERCENTAGE / 100)
-          : leverancierPrijs;
-
-      const nieuwePrijs = roundUpTo95(leverancierIncl);
-
-      let status;
-
-        if (nieuwePrijs > oudePrijs) {
-          status = "higher";
-        } else if (nieuwePrijs < oudePrijs) {
-          status = "lower";
-        } else {
-          status = "equal";
-        }
-
+    if (!leverancierMap.has(artikelnummer)) {
       return {
         artikelnummer,
         naam,
         oudePrijs: oudePrijsRaw,
-        nieuwePrijs: nieuwePrijs.toLocaleString("nl-NL", {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2
-        }),
-        status
+        nieuwePrijs: "",
+        status: "notfound"
       };
-    });
+    }
 
-    setResults(output);
-    setStatusFilter("all");
-  };
+    const leverancierPrijs = leverancierMap.get(artikelnummer);
 
+    const leverancierIncl =
+      levBTWMode === "excl"
+        ? leverancierPrijs * 1.21
+        : leverancierPrijs;
+
+    const nieuwePrijs = roundUpTo95(leverancierIncl);
+
+    let status;
+    if (nieuwePrijs > oudePrijs) status = "higher";
+    else if (nieuwePrijs < oudePrijs) status = "lower";
+    else status = "equal";
+
+    return {
+      artikelnummer,
+      naam,
+      oudePrijs: oudePrijsRaw,
+      nieuwePrijs: nieuwePrijs.toLocaleString("nl-NL", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }),
+      status
+    };
+  });
+
+  setResults(output);
+  setStatusFilter("all");
+};
   /* =========================
      FILTER + SORT
   ========================= */
