@@ -272,21 +272,6 @@ function App() {
 
       {webshopColumns.length > 0 && leverancierColumns.length > 0 && (
         <div className="card mapping-grid">
-          <select onChange={e => setMapping({...mapping, wsArtikel: e.target.value})}>
-            <option value="">Webshop Nummer</option>
-            {webshopColumns.map(col => <option key={col}>{col}</option>)}
-          </select>
-
-          <select onChange={e => setMapping({...mapping, wsNaam: e.target.value})}>
-            <option value="">Webshop Naam</option>
-            {webshopColumns.map(col => <option key={col}>{col}</option>)}
-          </select>
-
-          <select onChange={e => setMapping({...mapping, wsPrijs: e.target.value})}>
-            <option value="">Webshop Prijs</option>
-            {webshopColumns.map(col => <option key={col}>{col}</option>)}
-          </select>
-
           <select onChange={e => setMapping({...mapping, levArtikel: e.target.value})}>
             <option value="">Leverancier Nummer</option>
             {leverancierColumns.map(col => <option key={col}>{col}</option>)}
