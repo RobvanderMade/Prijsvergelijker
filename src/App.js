@@ -38,32 +38,60 @@ function App() {
   const [search, setSearch] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: "", direction: "asc" });
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dragActive, setDragActive] = useState(null);
 
   /* =========================
-     BESTANDEN INLEZEN
+     BESTAND INLEZEN
   ========================= */
 
-  const handleWebshopFile = (file) => {
+  const parseExcel = (file, setterData, setterColumns) => {
     const reader = new FileReader();
     reader.onload = (e) => {
       const workbook = XLSX.read(e.target.result, { type: "binary" });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(sheet);
-      setWebshopData(data);
-      setWebshopColumns(Object.keys(data[0] || {}));
+      setterData(data);
+      setterColumns(Object.keys(data[0] || {}));
     };
     reader.readAsBinaryString(file);
   };
 
-  const handleLeverancierFile = (file) => {
+  const parseCSV = (file, setterData, setterColumns) => {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       complete: (res) => {
-        setLeverancierData(res.data);
-        setLeverancierColumns(Object.keys(res.data[0] || {}));
-      },
+        setterData(res.data);
+        setterColumns(Object.keys(res.data[0] || {}));
+      }
     });
+  };
+
+  const handleFile = (file, type) => {
+    if (!file) return;
+
+    const isCSV = file.name.toLowerCase().endsWith(".csv");
+
+    if (type === "webshop") {
+      isCSV
+        ? parseCSV(file, setWebshopData, setWebshopColumns)
+        : parseExcel(file, setWebshopData, setWebshopColumns);
+    } else {
+      isCSV
+        ? parseCSV(file, setLeverancierData, setLeverancierColumns)
+        : parseExcel(file, setLeverancierData, setLeverancierColumns);
+    }
+  };
+
+  const handleDrop = (e, type) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(null);
+
+    if (e.dataTransfer.files?.length) {
+      handleFile(e.dataTransfer.files[0], type);
+      e.dataTransfer.clearData();
+    }
   };
 
   /* =========================
@@ -157,7 +185,17 @@ function App() {
   };
 
   /* =========================
-     STATISTIEKEN
+     EXPORT CSV
+  ========================= */
+
+  const exportCSV = () => {
+    const csv = Papa.unparse(filteredResults, { delimiter: ";" });
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    saveAs(blob, "prijs_update.csv");
+  };
+
+  /* =========================
+     STATS
   ========================= */
 
   const stats = {
@@ -168,23 +206,6 @@ function App() {
   };
 
   /* =========================
-     EXPORT
-  ========================= */
-
-  const exportExcel = () => {
-    const worksheet = XLSX.utils.json_to_sheet(filteredResults);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Prijsupdate");
-
-    const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const blob = new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    });
-
-    saveAs(blob, "prijs_update.xlsx");
-  };
-
-  /* =========================
      UI
   ========================= */
 
@@ -192,109 +213,61 @@ function App() {
     <div className="App">
       <h1>Webshop Prijs Vergelijker</h1>
 
-      {/* Upload */}
       <div className="card upload-grid">
-        <div>
-          <label>Webshop Excel</label>
-          <input type="file" accept=".xlsx" onChange={(e) => handleWebshopFile(e.target.files[0])} />
+
+        <div
+          className={`dropzone ${dragActive === "webshop" ? "active" : ""}`}
+          onDragEnter={() => setDragActive("webshop")}
+          onDragLeave={() => setDragActive(null)}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => handleDrop(e, "webshop")}
+        >
+          <label>Webshop bestand (CSV of Excel)</label>
+          <input
+            type="file"
+            accept=".xlsx,.csv"
+            onChange={(e) => handleFile(e.target.files[0], "webshop")}
+          />
+          <p>Sleep bestand hierheen of klik om te kiezen</p>
         </div>
 
-        <div>
-          <label>Leverancier CSV (excl. BTW)</label>
-          <input type="file" accept=".csv" onChange={(e) => handleLeverancierFile(e.target.files[0])} />
+        <div
+          className={`dropzone ${dragActive === "leverancier" ? "active" : ""}`}
+          onDragEnter={() => setDragActive("leverancier")}
+          onDragLeave={() => setDragActive(null)}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => handleDrop(e, "leverancier")}
+        >
+          <label>Leverancier bestand (CSV of Excel, excl. BTW)</label>
+          <input
+            type="file"
+            accept=".xlsx,.csv"
+            onChange={(e) => handleFile(e.target.files[0], "leverancier")}
+          />
+          <p>Sleep bestand hierheen of klik om te kiezen</p>
         </div>
+
       </div>
 
-      {/* Mapping */}
-      {(webshopColumns.length > 0 || leverancierColumns.length > 0) && (
-        <div className="card mapping-grid">
-          <select onChange={e => setMapping({...mapping, wsArtikel: e.target.value})}>
-            <option value="">Webshop Nummer</option>
-            {webshopColumns.map(col => <option key={col}>{col}</option>)}
-          </select>
-
-          <select onChange={e => setMapping({...mapping, wsNaam: e.target.value})}>
-            <option value="">Webshop Productnaam</option>
-            {webshopColumns.map(col => <option key={col}>{col}</option>)}
-          </select>
-
-          <select onChange={e => setMapping({...mapping, wsPrijs: e.target.value})}>
-            <option value="">Webshop Prijs incl. BTW</option>
-            {webshopColumns.map(col => <option key={col}>{col}</option>)}
-          </select>
-
-          <select onChange={e => setMapping({...mapping, levArtikel: e.target.value})}>
-            <option value="">Leverancier Nummer</option>
-            {leverancierColumns.map(col => <option key={col}>{col}</option>)}
-          </select>
-
-          <select onChange={e => setMapping({...mapping, levPrijs: e.target.value})}>
-            <option value="">Leverancier Prijs excl. BTW(excl)</option>
-            {leverancierColumns.map(col => <option key={col}>{col}</option>)}
-          </select>
-
-          <button className="primary" onClick={comparePrices}>Vergelijken</button>
-        </div>
-      )}
-
-      {/* Dashboard Filters */}
       {results.length > 0 && (
-        <div className="card stats">
-          <div className={`stat-box ${statusFilter === "all" ? "active" : ""}`} onClick={() => setStatusFilter("all")}>
-            Totaal: {stats.total}
+        <>
+          <div className="card stats">
+            <div onClick={() => setStatusFilter("all")}>Totaal: {stats.total}</div>
+            <div onClick={() => setStatusFilter("notfound")}>Niet gevonden: {stats.notfound}</div>
+            <div onClick={() => setStatusFilter("higher")}>Prijs hoger: {stats.higher}</div>
+            <div onClick={() => setStatusFilter("lower")}>Prijs lager/gelijk: {stats.lower}</div>
           </div>
 
-          <div className={`stat-box red-box ${statusFilter === "notfound" ? "active" : ""}`} onClick={() => setStatusFilter("notfound")}>
-            Niet gevonden: {stats.notfound}
+          <div className="card">
+            <input
+              type="text"
+              placeholder="Zoek artikelnummer..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <button onClick={exportCSV}>Export CSV</button>
           </div>
-
-          <div className={`stat-box green-box ${statusFilter === "higher" ? "active" : ""}`} onClick={() => setStatusFilter("higher")}>
-            Prijs hoger: {stats.higher}
-          </div>
-
-          <div className={`stat-box orange-box ${statusFilter === "lower" ? "active" : ""}`} onClick={() => setStatusFilter("lower")}>
-            Prijs lager/gelijk: {stats.lower}
-          </div>
-        </div>
-      )}
-
-      {/* Zoek + Export */}
-      {results.length > 0 && (
-        <div className="card">
-          <input
-            type="text"
-            placeholder="Zoek artikelnummer..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <button className="secondary" onClick={exportExcel}>Export Excel</button>
-        </div>
-      )}
-
-      {/* Tabel */}
-      {results.length > 0 && (
-        <div className="card table-container">
-          <table>
-            <thead>
-              <tr>
-                <th onClick={() => requestSort("artikelnummer")}>Artikelnummer</th>
-                <th onClick={() => requestSort("naam")}>Naam</th>
-                <th onClick={() => requestSort("oudePrijs")}>Oude prijs</th>
-                <th onClick={() => requestSort("nieuwePrijs")}>Nieuwe prijs</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredResults.map((r, i) => (
-                <tr key={i} className={r.status}>
-                  <td>{r.artikelnummer}</td>
-                  <td>{r.naam}</td>
-                  <td>{r.oudePrijs}</td>
-                  <td>{r.nieuwePrijs}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        </>
       )}
     </div>
   );
